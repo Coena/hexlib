@@ -630,8 +630,8 @@ hex.extend(hex, {
         };
       
       // Handle panning
-      if (pan.panning) {
-        if (pan.enabled && inside) {
+      if (pan.panning && pan.enabled) {
+        if (inside) {
           var
             px = pos.x - pan.x,
             py = pos.y - pan.y;
@@ -667,24 +667,24 @@ hex.extend(hex, {
       
       // Queue up tileout callbacks if there are any
       if (tileout && lastTile.x !== null && lastTile.y !== null) {
-        g.queue("tileout", lastTile.x, lastTile.y);
+        g.queue("tileout", lastTile.x, lastTile.y, event);
       }
       
       // Queue up gridout callbacks if applicable
       if (!inside && gridout && lastTile.x !== null && lastTile.y !== null) {
-        g.queue("gridout", lastTile.x, lastTile.y);
+        g.queue("gridout", lastTile.x, lastTile.y, event);
       }
       
       if (inside) {
         
         // Queue up gridover callbacks if applicable
         if (gridover && lastTile.x === null && lastTile.y === null) {
-          g.queue("gridover", trans.x, trans.y);
+          g.queue("gridover", trans.x, trans.y, event);
         }
         
         // Queue up tileover callbacks if there are any
         if (tileover) {
-          g.queue("tileover", trans.x, trans.y);
+          g.queue("tileover", trans.x, trans.y, event);
         }
         
         lastTile.x = trans.x;
@@ -761,7 +761,7 @@ hex.extend(hex, {
         pan.x = mousepos.x - 2 * g.origin.x;
         pan.y = mousepos.y - 2 * g.origin.y;
         elem.style.cursor = "move";
-        g.queue("panstart");
+        g.queue("panstart", event);
       }
       
       // Cease panning
@@ -784,7 +784,7 @@ hex.extend(hex, {
         
         // reorient if panning is still enabled
         if (pan.enabled) {
-          g.queue("panend", mousepos.x - pan.x - 2 * g.origin.x, mousepos.y - pan.y - 2 * g.origin.y);
+          g.queue("panend", mousepos.x - pan.x - 2 * g.origin.x, mousepos.y - pan.y - 2 * g.origin.y, event);
           g.reorient(
             mousepos.x - g.origin.x - pan.x,
             mousepos.y - g.origin.y - pan.y
@@ -831,7 +831,7 @@ hex.extend(hex, {
         // Trigger tiledown callbacks
         if (tiledown) {
           g.fire(); // fire any previously queued events
-          var res = g.trigger("tiledown", trans.x, trans.y);
+          var res = g.trigger("tiledown", trans.x, trans.y, event);
           if (res && res.prevented) {
             pan.enabled = false;
           }
@@ -850,16 +850,16 @@ hex.extend(hex, {
         
         // Queue up tileup callbacks
         if (tileup) {
-          g.queue("tileup", trans.x, trans.y);
+          g.queue("tileup", trans.x, trans.y, event);
         }
         
         // Queue up tileclick and tiletap callbacks
         if (downTile.x === trans.x && downTile.y === trans.y) {
           if (tileclick) {
-            g.queue("tileclick", trans.x, trans.y);
+            g.queue("tileclick", trans.x, trans.y, event);
           }
           if (tiletap && downTime && (+new Date()) - downTime < g.tapthreshold) {
-            g.queue("tiletap", trans.x, trans.y);
+            g.queue("tiletap", trans.x, trans.y, event);
           }
         }
         
@@ -909,7 +909,7 @@ hex.extend(hex, {
       
       // Queue gridout event handlers if applicable
       if (downTile.x !== null && downTile.y !== null && !event.inside(elem)) {
-        g.queue("gridout", downTile.x, downTile.y);
+        g.queue("gridout", downTile.x, downTile.y, event);
       }
       
       // Clear previously set downTile and lastTile coordinates
@@ -957,15 +957,15 @@ hex.extend(hex, {
         e.preventDefault();
         if (event.wheelDeltaX || event.axis && event.axis === event.HORIZONTAL_AXIS) {
           var deltax = g.tileWidth * direction;
-          g.queue("panstart");
-          g.queue("panmove", deltax, 0);
-          g.queue("panend", deltax, 0);
+          g.queue("panstart", event);
+          g.queue("panmove", deltax, 0, event);
+          g.queue("panend", deltax, 0, event);
           g.reorient(g.origin.x + deltax, g.origin.y);
         } else {
           var deltay = g.tileHeight * direction;
-          g.queue("panstart");
-          g.queue("panmove", 0, deltay);
-          g.queue("panend", 0, deltay);
+          g.queue("panstart", event);
+          g.queue("panmove", 0, deltay, event);
+          g.queue("panend", 0, deltay, event);
           g.reorient(g.origin.x, g.origin.y + deltay);
         }
       }
@@ -1156,6 +1156,176 @@ hex.grid.hexagonal = {
 
 })(window.hex);
 
+
+/**
+ * hex.grid.hexagonal-horizontal.js
+ */
+(function (hex, undefined) {
+
+var
+  floor = Math.floor;
+
+/**
+ * The hexagonal grid with horizontal layout prototype.
+ */
+hex.grid.hexagonal_horizontal = {
+
+  /**
+   * Determine to which quadrant a given screen coordinate pair corresponds.
+   * @param posx The horizontal screen coordinate.
+   * @param posy The vertical screen coordinate.
+   * @return An object with an x and y property, mapping to the geometry appropriate coordinates of the grid.
+   */
+  quadrant: function quadrant(posx, posy) {
+
+    var
+      w = this.tileWidth,
+      h = this.tileHeight,
+      qx = floor(( posx ) / w),
+      qy = floor(( posy - h * 0.25 ) / ( h * 0.75 ));
+
+    return {
+      x: qx,
+      y: qy
+    };
+
+  },
+
+  /**
+   * Given a pair of hex coordinates, calculates the appropriate screen position.
+   * @param hexx The horizontal hexagonal grid coordinate (30 degrees up from vertical).
+   * @param hexy The "vertical" hexagonal grid coordinate.
+   * @return An object with an x and y property, mapping to the actual screen coordinates.
+   */
+  screenpos: function screenpos(hexx, hexy) {
+
+    var
+      w = this.tileWidth ,
+      h = this.tileHeight * 0.75,
+      sx = -hexx * w - hexy * w * 0.5,
+      sy = hexy * h;
+
+    return {
+      x: sx,
+      y: sy
+    };
+
+  },
+
+  /**
+   * Hexagon tile characteristics.
+   */
+  tileHeight: 48,
+  tileWidth: 42,
+
+  /**
+   * Translate a pair of x/y screen coordinates into the geometry appropriate coordinates of this grid.
+   * @param posx The horizontal screen coordinate.
+   * @param posy The vertical screen coordinate.
+   * @return An object with an x and y property, mapping to the geometry appropriate coordinates of the grid.
+   */
+  translate: function translate(posx, posy) {
+
+    // Useful shorthand values
+    var
+      h2 = this.tileHeight * 0.5,
+      h4 = h2 * 0.5,
+      h34 = h4 * 3,
+      w = this.tileWidth,
+      w2 = w * 0.5,
+      m = w2 / h4,
+      x,
+      y;
+
+    // Determine the "quadrant" in which the click occurred (there are two types, as discussed later)
+    var
+      q = this.quadrant(posx, posy),
+      qx = q.x,
+      qy = q.y;
+
+    // Based on the quadrant, calculate the pixel offsets of the click within the quadrant
+    var
+      py = (posy - h4) % h34,
+      px = ( posx ) % w;
+    if (py < 0) {
+      py += h34;
+    }
+    if (px < 0) {
+      px += w;
+    }
+    py -= h2;
+
+    // Mode determined by x quadrant
+    if (qy % 2) {
+
+      // |_/|  A-type quadrant
+      // | \|
+
+      // Start with simple cases
+      y = qy;
+      x = (1 - qy) * 0.5 - qx - (px > w2 ? 1 : 0);
+      if (py <= 0 || px === w2) {
+        return {
+          x: x,
+          y: y
+        };
+      }
+
+      // Make adjustments if click happened in right-hand third of the quadrant
+      if (px < w2 && px > ( w2 - py * m)) {
+        return {
+          y: y + 1,
+          x: x - 1
+        };
+      }
+      if (px > w2 && px < (w2 + py * m)) {
+        return {
+          y: y + 1,
+          x: x
+        };
+      }
+
+    } else {
+
+      // | \|  B-type quadrant
+      // | /|
+
+      // Start with simple case
+      y = qy;
+      x = -qy * 0.5 - qx;
+      if (py <= 0 || px === w2) {
+        return {
+          x: x,
+          y: y
+        };
+      }
+
+      // Make adjustments if the click happened in the latter third
+      if (px < w2 && px < py * m) {
+        return {
+          y: y + 1,
+          x: x
+        };
+      }
+      if (px > w2 && px > (w - py * m)) {
+        return {
+          y: y + 1,
+          x: x - 1
+        };
+      }
+    }
+
+    // fall through case - no adjustments necessary
+    return {
+      x: x,
+      y: y
+    };
+
+  }
+
+};
+
+})(window.hex);
 
 /**
  * hex.grid.rectangular.js
